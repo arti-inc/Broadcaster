@@ -10,8 +10,25 @@ import org.spongepowered.configurate.objectmapping.meta.Comment;
 
 @ConfigSerializable
 public interface CoreConfig {
+    @Comment("Enable MCXboxBroadcast")
+    @DefaultBoolean(false)
+    boolean enabled();
+
     @Comment("Core session settings")
     SessionConfig session();
+
+    @Comment("Override the advertised Xbox session metadata")
+    SessionOverridesConfig sessionOverrides();
+
+    @Comment("Xbox session behaviour")
+    XboxSessionConfig xboxSession();
+
+    @Comment("Standalone plain-Bedrock proxy bridge settings")
+    @ExcludePlatform(platforms = {"Extension"})
+    BridgeConfig bridge();
+
+    @Comment("Advanced NetherNet publishing settings")
+    NetherNetConfig netherNet();
 
     @Comment("Friend/follower list sync settings")
     FriendSyncConfig friendSync();
@@ -106,6 +123,90 @@ public interface CoreConfig {
             @NumericRange(from = 1, to = 65535)
             int port();
         }
+    }
+
+    @ConfigSerializable
+    interface SessionOverridesConfig {
+        @Comment("Whether live Geyser ping data should update the advertised Xbox session")
+        @DefaultBoolean(true)
+        boolean syncFromGeyser();
+
+        @Comment("Override the advertised host name when non-empty")
+        @DefaultString("")
+        String hostName();
+
+        @Comment("Override the advertised world name when non-empty")
+        @DefaultString("")
+        String worldName();
+
+        @Comment("Override the advertised current player count. Use -1 to keep the live value")
+        @DefaultNumeric(-1)
+        int players();
+
+        @Comment("Override the advertised max player count. Use -1 to keep the live value")
+        @DefaultNumeric(-1)
+        int maxPlayers();
+    }
+
+    @ConfigSerializable
+    interface XboxSessionConfig {
+        @Comment("Who can see and join the session. Common values: joinable_by_friends, joinable_by_friends_of_friends")
+        @DefaultString("joinable_by_friends")
+        String joinability();
+
+        @Comment("The world type shown in the Xbox session")
+        @DefaultString("Survival")
+        String worldType();
+
+        @Comment("Whether the session should show as a hardcore world")
+        @DefaultBoolean(false)
+        boolean hardcore();
+
+        @Comment("Whether the session should show as an editor world")
+        @DefaultBoolean(false)
+        boolean editorWorld();
+    }
+
+    @ConfigSerializable
+    interface BridgeConfig {
+        @Comment("""
+            Enable a Bedrock proxy listener that accepts joins at this app and relays packets to a plain Bedrock backend.
+            This is intended for Bedrock Dedicated Server style targets, not PaperMC + Geyser.""")
+        @DefaultBoolean(false)
+        boolean enabled();
+
+        @Comment("The local address to bind the proxy listener to")
+        @DefaultString("0.0.0.0")
+        String listenAddress();
+
+        @Comment("The local port to bind the proxy listener to")
+        @DefaultNumeric(19132)
+        @NumericRange(from = 1, to = 65535)
+        int listenPort();
+
+        @Comment("The plain Bedrock backend host that the proxy should relay into")
+        @DefaultString("127.0.0.1")
+        String backendAddress();
+
+        @Comment("The plain Bedrock backend port that the proxy should relay into")
+        @DefaultNumeric(19133)
+        @NumericRange(from = 1, to = 65535)
+        int backendPort();
+    }
+
+    @ConfigSerializable
+    interface NetherNetConfig {
+        @Comment("""
+            Publish an externally hosted NetherNet session instead of binding MCXboxBroadcast's own NetherNet gameplay listener.
+            Enable this when another process such as a Geyser fork terminates the actual Bedrock/NetherNet join path.""")
+        @DefaultBoolean(false)
+        boolean externalHosted();
+
+        @Comment("""
+            The externally hosted NetherNet network id to advertise in the Xbox session.
+            This must match the listener that actually accepts the NetherNet/WebRTC join.""")
+        @DefaultString("")
+        String externalNetworkId();
     }
 
     @ConfigSerializable

@@ -55,6 +55,9 @@ docker run --rm -it -v /path/to/config:/opt/app/config ghcr.io/mcxboxbroadcast/s
 8. Restart the tool
 9. Check the friends tab ingame and you should see the server listed
 
+#### External-hosted NetherNet note
+If you use the standalone broadcaster only for Xbox session publishing and run the actual NetherNet/Geyser ingress on the same local machine, you do **not** need to put your router-forwarded public Bedrock port into `config.yml`. In `nether-net.external-hosted` mode, the join path is driven by the NetherNet network ID, so the `session.session-info` IP/port can stay on the local host/LAN side that matches your real Bedrock listener.
+
 ## Manager
 There is a web manager available for donators. After joining the relevent [GitHub sponsors](https://github.com/sponsors/rtm516) tier you will be able to access its builds at https://github.com/MCXboxBroadcast/Manager/releases
 

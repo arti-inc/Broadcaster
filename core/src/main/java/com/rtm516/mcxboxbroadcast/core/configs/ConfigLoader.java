@@ -18,6 +18,12 @@ import static org.spongepowered.configurate.transformation.TransformAction.renam
 public class ConfigLoader {
     private static final ConfigurationTransformation.Versioned TRANSFORMER = ConfigurationTransformation.versionedBuilder()
         .versionKey("config-version")
+        .addVersion(5, ConfigurationTransformation.builder()
+            .build())
+        .addVersion(4, ConfigurationTransformation.builder()
+            .build())
+        .addVersion(3, ConfigurationTransformation.builder()
+            .build())
         .addVersion(2, ConfigurationTransformation.builder()
             // Extension only settings
             .addAction(path("remote-address"), moveTo("session"))

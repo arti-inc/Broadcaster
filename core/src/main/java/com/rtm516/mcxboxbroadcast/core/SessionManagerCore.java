@@ -13,14 +13,21 @@ import com.rtm516.mcxboxbroadcast.core.models.session.SocialSummaryResponse;
 import com.rtm516.mcxboxbroadcast.core.notifications.NotificationManager;
 import com.rtm516.mcxboxbroadcast.core.storage.StorageManager;
 import com.rtm516.mcxboxbroadcast.core.nethernet.BroadcasterChannelInitializer;
+import com.rtm516.mcxboxbroadcast.core.nethernet.bridge.BridgeClientSession;
 import dev.kastle.netty.channel.nethernet.NetherNetChannelFactory;
 import dev.kastle.netty.channel.nethernet.signaling.NetherNetXboxRpcSignaling;
 import dev.kastle.webrtc.PeerConnectionFactory;
+import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioDatagramChannel;
 import net.raphimc.minecraftauth.bedrock.BedrockAuthManager;
+import org.cloudburstmc.netty.channel.raknet.RakChannelFactory;
+import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
+import org.cloudburstmc.protocol.bedrock.BedrockPeer;
+import org.cloudburstmc.protocol.bedrock.netty.initializer.BedrockChannelInitializer;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,10 +37,13 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 
 /**
  * Simple manager to authenticate and create sessions on Xbox
@@ -58,6 +68,7 @@ public abstract class SessionManagerCore {
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private NetherNetXboxRpcSignaling signaling;
+    private final Set<Channel> bridgeClientChannels = ConcurrentHashMap.newKeySet();
 
     /**
      * Create an instance of SessionManager
@@ -247,10 +258,14 @@ public abstract class SessionManagerCore {
                 throw new SessionCreationException("Unable to get connectionId for session: " + e.getMessage());
             }
 
-            setupNetherNet();
+            if (this.sessionInfo.isExternalNetherNetHosted()) {
+                logger.info("Using externally hosted NetherNet ID: " + this.sessionInfo.getNetherNetId());
+            } else {
+                setupNetherNet();
 
-            if (this.netherNetChannel == null || !this.netherNetChannel.isOpen()) {
-                throw new SessionCreationException("Unable to start NetherNet channel");
+                if (this.netherNetChannel == null || !this.netherNetChannel.isOpen()) {
+                    throw new SessionCreationException("Unable to start NetherNet channel");
+                }
             }
         }
 
@@ -371,7 +386,8 @@ public abstract class SessionManagerCore {
      */
     protected void checkConnection() {
         boolean rtaIsOpen = this.rtaWebsocket != null && this.rtaWebsocket.isOpen();
-        boolean rtcIsOpen = this.netherNetChannel != null && this.netherNetChannel.isOpen();
+        boolean rtcIsOpen = this.sessionInfo != null && this.sessionInfo.isExternalNetherNetHosted()
+            || this.netherNetChannel != null && this.netherNetChannel.isOpen();
 
         // Check if the connection is Lost
         if (!rtaIsOpen || !rtcIsOpen) {
@@ -446,6 +462,40 @@ public abstract class SessionManagerCore {
         }
     }
 
+    public void newBridgeClient(Consumer<BridgeClientSession> sessionConsumer) {
+        if (this.workerGroup == null) {
+            throw new IllegalStateException("NetherNet worker group is not initialized");
+        }
+
+        String host = sessionInfo.getRelayTargetAddress() != null && !sessionInfo.getRelayTargetAddress().isBlank()
+            ? sessionInfo.getRelayTargetAddress()
+            : sessionInfo.getIp();
+        int port = sessionInfo.getRelayTargetPort() > 0
+            ? sessionInfo.getRelayTargetPort()
+            : sessionInfo.getPort();
+
+        Channel channel = new Bootstrap()
+            .group(this.workerGroup)
+            .channelFactory(RakChannelFactory.client(NioDatagramChannel.class))
+            .option(RakChannelOption.RAK_PROTOCOL_VERSION, Constants.BEDROCK_CODEC.getRaknetProtocolVersion())
+            .handler(new BedrockChannelInitializer<BridgeClientSession>() {
+                @Override
+                protected BridgeClientSession createSession0(BedrockPeer peer, int subClientId) {
+                    return new BridgeClientSession(peer, subClientId);
+                }
+
+                @Override
+                protected void initSession(BridgeClientSession session) {
+                    sessionConsumer.accept(session);
+                }
+            })
+            .connect(new InetSocketAddress(host, port))
+            .awaitUninterruptibly()
+            .channel();
+
+        this.bridgeClientChannels.add(channel);
+    }
+
     /**
      * Stop the current session and close the websocket
      */
@@ -460,6 +510,10 @@ public abstract class SessionManagerCore {
     }
 
     private void shutdownNetherNet() {
+        for (Channel bridgeClientChannel : bridgeClientChannels) {
+            bridgeClientChannel.close();
+        }
+        bridgeClientChannels.clear();
         if (netherNetChannel != null) {
             netherNetChannel.close();
             netherNetChannel = null;

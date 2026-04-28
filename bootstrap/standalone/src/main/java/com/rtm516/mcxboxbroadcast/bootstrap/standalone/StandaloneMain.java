@@ -12,6 +12,7 @@ import com.rtm516.mcxboxbroadcast.core.exceptions.SessionCreationException;
 import com.rtm516.mcxboxbroadcast.core.exceptions.SessionUpdateException;
 import com.rtm516.mcxboxbroadcast.core.ping.PingUtil;
 import com.rtm516.mcxboxbroadcast.core.storage.FileStorageManager;
+import com.rtm516.mcxboxbroadcast.bootstrap.standalone.bridge.StandaloneBridgeService;
 import org.cloudburstmc.protocol.bedrock.BedrockPong;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +27,7 @@ public class StandaloneMain {
     private static StandaloneLoggerImpl logger;
     private static SessionInfo sessionInfo;
     private static NotificationManager notificationManager;
+    private static StandaloneBridgeService bridgeService;
 
     public static SessionManager sessionManager;
 
@@ -45,30 +47,45 @@ public class StandaloneMain {
         }
 
         logger.setDebug(config.debugMode());
+        logMode();
 
         // TODO Support multiple notification types
         notificationManager = new SlackNotificationManager(logger, config.notifications());
-
-        sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
-
         sessionInfo = new SessionInfo(config.session().sessionInfo());
+        applySessionSettings(sessionInfo);
 
-        // Fallback to the gamertag if the host name is empty
-        if (sessionInfo.getHostName().isEmpty()) {
-            sessionInfo.setHostName(sessionManager.getGamertag());
+        if (isLocalBridgeEnabled()) {
+            bridgeService = new StandaloneBridgeService(config, logger.prefixed("bridge"), () -> sessionInfo);
+            bridgeService.start();
         }
 
-        PingUtil.setWebPingEnabled(config.session().webQueryFallback());
+        if (config.enabled()) {
+            sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
 
-        // Sync the session info from the server if needed
-        updateSessionInfo(sessionInfo);
+            // Fallback to the gamertag if the host name is empty
+            if (sessionInfo.getHostName().isEmpty()) {
+                sessionInfo.setHostName(sessionManager.getGamertag());
+            }
 
-        createSession();
+            PingUtil.setWebPingEnabled(config.session().webQueryFallback());
+
+            // Sync the session info from the server if needed
+            updateSessionInfo(sessionInfo);
+
+            createSession();
+        } else {
+            logger.info("Xbox session publishing is disabled in config.yml");
+        }
 
         logger.start();
     }
 
     public static void restart() {
+        if (!config.enabled()) {
+            logger.info("Xbox session publishing is disabled in config.yml");
+            return;
+        }
+
         try {
             sessionManager.shutdown();
 
@@ -109,9 +126,11 @@ public class StandaloneMain {
     }
 
     private static void updateSessionInfo(SessionInfo sessionInfo) {
-        if (config.session().queryServer()) {
+        if (config.session().queryServer() && config.sessionOverrides().syncFromGeyser()) {
             try {
-                InetSocketAddress addressToPing = new InetSocketAddress(sessionInfo.getIp(), sessionInfo.getPort());
+                InetSocketAddress addressToPing = isLocalBridgeEnabled()
+                    ? new InetSocketAddress(config.bridge().backendAddress(), config.bridge().backendPort())
+                    : new InetSocketAddress(sessionInfo.getIp(), sessionInfo.getPort());
                 BedrockPong pong = PingUtil.ping(addressToPing, 1500, TimeUnit.MILLISECONDS).get();
 
                 // Update the session information
@@ -119,6 +138,7 @@ public class StandaloneMain {
                 sessionInfo.setWorldName(pong.motd());
                 sessionInfo.setPlayers(pong.playerCount());
                 sessionInfo.setMaxPlayers(pong.maximumPlayerCount());
+                applySessionSettings(sessionInfo);
 
                 // Fallback to the gamertag if the host name is empty
                 if (sessionInfo.getHostName().isEmpty()) {
@@ -132,6 +152,7 @@ public class StandaloneMain {
                     sessionInfo.setWorldName(config.session().sessionInfo().worldName());
                     sessionInfo.setPlayers(config.session().sessionInfo().players());
                     sessionInfo.setMaxPlayers(config.session().sessionInfo().maxPlayers());
+                    applySessionSettings(sessionInfo);
 
                     // Fallback to the gamertag if the host name is empty
                     if (sessionInfo.getHostName().isEmpty()) {
@@ -142,5 +163,85 @@ public class StandaloneMain {
                 }
             }
         }
+    }
+
+    private static void applySessionSettings(SessionInfo sessionInfo) {
+        if (!config.sessionOverrides().hostName().isBlank()) {
+            sessionInfo.setHostName(config.sessionOverrides().hostName());
+        }
+        if (!config.sessionOverrides().worldName().isBlank()) {
+            sessionInfo.setWorldName(config.sessionOverrides().worldName());
+        }
+        if (config.sessionOverrides().players() >= 0) {
+            sessionInfo.setPlayers(config.sessionOverrides().players());
+        }
+        if (config.sessionOverrides().maxPlayers() >= 0) {
+            sessionInfo.setMaxPlayers(config.sessionOverrides().maxPlayers());
+        }
+
+        sessionInfo.setJoinability(config.xboxSession().joinability());
+        sessionInfo.setWorldType(config.xboxSession().worldType());
+        sessionInfo.setEditorWorld(config.xboxSession().editorWorld());
+        sessionInfo.setHardcore(config.xboxSession().hardcore());
+        sessionInfo.setExternalNetherNetHosted(config.netherNet().externalHosted() && !config.netherNet().externalNetworkId().isBlank());
+        sessionInfo.setExternalNetherNetId(config.netherNet().externalNetworkId());
+        if (isLocalBridgeEnabled()) {
+            sessionInfo.setProxyBridgeEnabled(true);
+            sessionInfo.setRelayTargetAddress(config.bridge().backendAddress());
+            sessionInfo.setRelayTargetPort(config.bridge().backendPort());
+            sessionInfo.setPort(config.bridge().listenPort());
+        } else {
+            sessionInfo.setProxyBridgeEnabled(false);
+            sessionInfo.setRelayTargetAddress(null);
+            sessionInfo.setRelayTargetPort(0);
+        }
+
+        if (sessionInfo.getHostName().isEmpty()) {
+            sessionInfo.setHostName("MCXboxBroadcast");
+        }
+        if (sessionInfo.getWorldName().isEmpty()) {
+            sessionInfo.setWorldName(sessionInfo.getHostName());
+        }
+    }
+
+    private static void logMode() {
+        boolean bridgeEnabled = isLocalBridgeEnabled();
+        boolean publishEnabled = config.enabled();
+        boolean externalNetherNet = isExternalNetherNetEnabled();
+
+        if (bridgeEnabled && publishEnabled) {
+            logger.info("Mode: BRIDGE + PUBLISH");
+            logger.info("Bedrock joins terminate at this proxy and relay to " + config.bridge().backendAddress() + ":" + config.bridge().backendPort());
+            logger.info("Xbox Live session publishing is enabled for the proxy endpoint " + config.session().sessionInfo().ip() + ":" + config.bridge().listenPort());
+            return;
+        }
+
+        if (bridgeEnabled) {
+            logger.info("Mode: BRIDGE");
+            logger.info("Bedrock joins terminate at this proxy and relay to " + config.bridge().backendAddress() + ":" + config.bridge().backendPort());
+            return;
+        }
+
+        if (publishEnabled && externalNetherNet) {
+            logger.info("Mode: PUBLISH + EXTERNAL NETHERNET");
+            logger.info("Xbox Live session publishing is enabled for externally hosted NetherNet ID " + config.netherNet().externalNetworkId());
+            return;
+        }
+
+        if (publishEnabled) {
+            logger.info("Mode: PUBLISH");
+            logger.info("Xbox Live session publishing is enabled without a Bedrock relay proxy.");
+            return;
+        }
+
+        logger.info("Mode: DISABLED");
+    }
+
+    private static boolean isLocalBridgeEnabled() {
+        return config.bridge().enabled() && !config.netherNet().externalHosted();
+    }
+
+    private static boolean isExternalNetherNetEnabled() {
+        return config.netherNet().externalHosted() && !config.netherNet().externalNetworkId().isBlank();
     }
 }
