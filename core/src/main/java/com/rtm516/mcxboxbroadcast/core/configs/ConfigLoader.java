@@ -18,6 +18,8 @@ import static org.spongepowered.configurate.transformation.TransformAction.renam
 public class ConfigLoader {
     private static final ConfigurationTransformation.Versioned TRANSFORMER = ConfigurationTransformation.versionedBuilder()
         .versionKey("config-version")
+        .addVersion(6, ConfigurationTransformation.builder()
+            .build())
         .addVersion(5, ConfigurationTransformation.builder()
             .build())
         .addVersion(4, ConfigurationTransformation.builder()

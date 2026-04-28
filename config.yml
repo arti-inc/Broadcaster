@@ -1,0 +1,150 @@
+# Enable MCXboxBroadcast
+enabled: true
+
+# Core session settings
+session:
+  # The amount of time in seconds to update session information
+  # Warning: This can be no lower than 20 due to Xbox rate limits
+  update-interval: 30
+
+  # Should we query the bedrock server to sync the session information
+  query-server: true
+
+  # This uses checker.geysermc.org for querying if the native ping fails
+  # This can be useful in the case of docker networks or routing problems causing the native ping to fail
+  web-query-fallback: false
+
+  # Fallback to config values if all other server query methods fail
+  config-fallback: true
+
+  # The data to broadcast over xbox live, this is the default if querying is enabled
+  session-info:
+    # The host name to broadcast
+    host-name: Testing Something Above Minecraft Logic
+
+    # The world name to broadcast
+    world-name: Normal World
+
+    # The current number of players
+    players: 0
+
+    # The maximum number of players
+    max-players: 20
+
+    # The IP address of the server
+    ip: 192.168.1.4
+
+    # The port of the server
+    port: 19132
+
+# Override the advertised Xbox session metadata
+session-overrides:
+  # Whether live Geyser ping data should update the advertised Xbox session
+  sync-from-geyser: true
+
+  # Override the advertised host name when non-empty
+  host-name: ''
+
+  # Override the advertised world name when non-empty
+  world-name: ''
+
+  # Override the advertised current player count. Use -1 to keep the live value
+  players: -1
+
+  # Override the advertised max player count. Use -1 to keep the live value
+  max-players: -1
+
+# Xbox session behaviour
+xbox-session:
+  # Who can see and join the session. Common values: joinable_by_friends, joinable_by_friends_of_friends
+  joinability: joinable_by_friends
+
+  # The world type shown in the Xbox session
+  world-type: Survival
+
+  # Whether the session should show as a hardcore world
+  hardcore: false
+
+  # Whether the session should show as an editor world
+  editor-world: false
+
+# Standalone plain-Bedrock proxy bridge settings
+bridge:
+  # Standalone Bedrock bridge settings.
+  # The bridge starts automatically unless nether-net.external-hosted is true.
+
+  # The local address to bind the proxy listener to
+  listen-address: 192.168.1.4
+
+  # The local port to bind the proxy listener to
+  listen-port: 19132
+
+  # The plain Bedrock backend host that the proxy should relay into
+  backend-address: 127.0.0.1
+
+  # The plain Bedrock backend port that the proxy should relay into
+  backend-port: 19132
+
+# Advanced NetherNet publishing settings
+nether-net:
+  # Publish an externally hosted NetherNet session instead of binding MCXboxBroadcast's own NetherNet gameplay listener.
+  # Enable this when another process such as a Geyser fork terminates the actual Bedrock/NetherNet join path.
+  external-hosted: false
+
+  # The externally hosted NetherNet network id to advertise in the Xbox session.
+  # This must match the listener that actually accepts the NetherNet/WebRTC join.
+  external-network-id: ''
+
+# Friend/follower list sync settings
+friend-sync:
+  # The amount of time in seconds to update session information
+  # Warning: This can be no lower than 20 due to Xbox rate limits
+  update-interval: 60
+
+  # Should we automatically follow people that follow us
+  auto-follow: true
+
+  # Should we automatically unfollow people that no longer follow us
+  auto-unfollow: true
+
+  # Should we automatically send an invite when a friend is added
+  initial-invite: true
+
+  # Friend expiry settings
+  expiry:
+    # Should we unfriend people that haven't joined the server in a while
+    enabled: true
+
+    # The amount of time in days before a friend is considered expired
+    days: 15
+
+    # How often to check in seconds for expired friends
+    check: 1800
+
+# Notification settings (e.g., Slack/Discord webhook)
+notifications:
+  # Should we send a message to a slack webhook when the session is updated
+  enabled: false
+
+  # The webhook url to send the message to
+  # If you are using discord add "/slack" to the end of the webhook url
+  webhook-url: ''
+
+  # The message to send when the session is expired and needs to be updated
+  session-expired-message: |-
+    <!here> Xbox Session expired, sign in again to update it.
+
+    Use the following link to sign in: %s
+    Enter the code: %s
+
+  # The message to send when a friend has restrictions in place that prevent them from being friends with our account
+  friend-restriction-message: '%s (%s) has restrictions in place that prevent them from being friends with our account.'
+
+# Enable debug logging
+debug-mode: false
+
+# Suppresses "Updated session!" log into debug
+suppress-session-update-message: false
+
+# Do not change!
+config-version: 6

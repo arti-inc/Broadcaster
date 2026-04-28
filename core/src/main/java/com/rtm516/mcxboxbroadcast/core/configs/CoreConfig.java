@@ -11,7 +11,7 @@ import org.spongepowered.configurate.objectmapping.meta.Comment;
 @ConfigSerializable
 public interface CoreConfig {
     @Comment("Enable MCXboxBroadcast")
-    @DefaultBoolean(false)
+    @DefaultBoolean(true)
     boolean enabled();
 
     @Comment("Core session settings")
@@ -170,12 +170,10 @@ public interface CoreConfig {
     @ConfigSerializable
     interface BridgeConfig {
         @Comment("""
-            Enable a Bedrock proxy listener that accepts joins at this app and relays packets to a plain Bedrock backend.
-            This is intended for Bedrock Dedicated Server style targets, not PaperMC + Geyser.""")
-        @DefaultBoolean(false)
-        boolean enabled();
+            Standalone Bedrock bridge settings.
+            The bridge starts automatically unless nether-net.external-hosted is true.
 
-        @Comment("The local address to bind the proxy listener to")
+            The local address to bind the proxy listener to""")
         @DefaultString("0.0.0.0")
         String listenAddress();
 

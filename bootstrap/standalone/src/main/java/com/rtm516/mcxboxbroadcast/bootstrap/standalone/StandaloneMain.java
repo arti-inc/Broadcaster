@@ -238,7 +238,7 @@ public class StandaloneMain {
     }
 
     private static boolean isLocalBridgeEnabled() {
-        return config.bridge().enabled() && !config.netherNet().externalHosted();
+        return !config.netherNet().externalHosted();
     }
 
     private static boolean isExternalNetherNetEnabled() {

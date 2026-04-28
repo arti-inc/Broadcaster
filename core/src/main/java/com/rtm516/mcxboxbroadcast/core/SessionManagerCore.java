@@ -452,7 +452,7 @@ public abstract class SessionManagerCore {
             ServerBootstrap b = new ServerBootstrap();
             b.group(bossGroup, workerGroup)
                 .channelFactory(NetherNetChannelFactory.server(new PeerConnectionFactory(), signaling))
-                .childHandler(new BroadcasterChannelInitializer(sessionInfo, this, logger));
+                .childHandler(new BroadcasterChannelInitializer(this, logger));
 
             this.netherNetChannel = b.bind(new InetSocketAddress(0)).sync().channel();
 
