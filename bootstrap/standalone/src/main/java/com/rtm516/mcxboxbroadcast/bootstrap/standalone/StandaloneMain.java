@@ -1,5 +1,7 @@
 package com.rtm516.mcxboxbroadcast.bootstrap.standalone;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.rtm516.mcxboxbroadcast.core.BuildData;
 import com.rtm516.mcxboxbroadcast.core.Constants;
 import com.rtm516.mcxboxbroadcast.core.SessionInfo;
@@ -152,6 +154,10 @@ public class StandaloneMain {
 
     private static void updateSessionInfo(SessionInfo sessionInfo) {
         if (config.session().queryServer() && config.session().syncFromGeyser()) {
+            if (isExternalNetherNetEnabled() && updateSessionInfoFromStatusFile(sessionInfo)) {
+                return;
+            }
+
             try {
                 InetSocketAddress addressToPing = isLocalBridgeEnabled()
                     ? new InetSocketAddress(config.bridge().backendAddress(), config.bridge().backendPort())
@@ -188,6 +194,56 @@ public class StandaloneMain {
                 }
             }
         }
+    }
+
+    private static boolean updateSessionInfoFromStatusFile(SessionInfo sessionInfo) {
+        String[] candidates = new String[] {
+            "./portal-session-status.json",
+            "../portal-session-status.json",
+            "../plugins/Geyser-Spigot/portal-session-status.json",
+            "../../plugins/Geyser-Spigot/portal-session-status.json",
+            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-session-status.json",
+            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-session-status.json"
+        };
+
+        for (String candidate : candidates) {
+            try {
+                Path path = Path.of(candidate).normalize();
+                if (!Files.isRegularFile(path)) {
+                    continue;
+                }
+
+                JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+                sessionInfo.setHostName(readStatusString(root, "hostName", config.session().sessionInfo().hostName()));
+                sessionInfo.setWorldName(readStatusString(root, "worldName", config.session().sessionInfo().worldName()));
+                sessionInfo.setPlayers(readStatusInt(root, "players", config.session().sessionInfo().players()));
+                sessionInfo.setMaxPlayers(readStatusInt(root, "maxPlayers", config.session().sessionInfo().maxPlayers()));
+                applySessionSettings(sessionInfo);
+
+                if (sessionInfo.getHostName().isEmpty()) {
+                    sessionInfo.setHostName(sessionManager.getGamertag());
+                }
+                return true;
+            } catch (Exception exception) {
+                logger.debug("Failed to read external session status file " + candidate + ": " + exception.getMessage());
+            }
+        }
+
+        return false;
+    }
+
+    private static String readStatusString(JsonObject root, String key, String fallback) {
+        if (!root.has(key) || root.get(key).isJsonNull()) {
+            return fallback;
+        }
+        return root.get(key).getAsString();
+    }
+
+    private static int readStatusInt(JsonObject root, String key, int fallback) {
+        if (!root.has(key) || root.get(key).isJsonNull()) {
+            return fallback;
+        }
+        return root.get(key).getAsInt();
     }
 
     private static void applySessionSettings(SessionInfo sessionInfo) {
