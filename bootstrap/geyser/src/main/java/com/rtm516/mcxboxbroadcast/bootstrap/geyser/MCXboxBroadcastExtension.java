@@ -233,7 +233,7 @@ public class MCXboxBroadcastExtension implements Extension {
 
     @Subscribe
     public void onBedrockPing(GeyserBedrockPingEvent event) {
-        if (sessionInfo == null || !config.sessionOverrides().syncFromGeyser()) {
+        if (sessionInfo == null || !config.session().syncFromGeyser()) {
             return;
         }
 
@@ -259,18 +259,18 @@ public class MCXboxBroadcastExtension implements Extension {
     private SessionInfo buildSessionInfo(String liveHostName, String liveWorldName, int livePlayers, int liveMaxPlayers, String ip, int port) {
         SessionInfo info = new SessionInfo();
 
-        String hostName = config.sessionOverrides().hostName().isBlank() ? liveHostName : config.sessionOverrides().hostName();
+        String hostName = config.session().sessionInfo().hostName().isBlank() ? liveHostName : config.session().sessionInfo().hostName();
         if (hostName == null || hostName.isBlank()) {
             hostName = sessionManager.getGamertag();
         }
 
-        String worldName = config.sessionOverrides().worldName().isBlank() ? liveWorldName : config.sessionOverrides().worldName();
+        String worldName = config.session().sessionInfo().worldName().isBlank() ? liveWorldName : config.session().sessionInfo().worldName();
         if (worldName == null || worldName.isBlank()) {
             worldName = hostName;
         }
 
-        int players = config.sessionOverrides().players() >= 0 ? config.sessionOverrides().players() : livePlayers;
-        int maxPlayers = config.sessionOverrides().maxPlayers() >= 0 ? config.sessionOverrides().maxPlayers() : liveMaxPlayers;
+        int players = config.session().sessionInfo().players() > 0 ? config.session().sessionInfo().players() : livePlayers;
+        int maxPlayers = config.session().sessionInfo().maxPlayers() > 0 ? config.session().sessionInfo().maxPlayers() : liveMaxPlayers;
 
         info.setHostName(hostName);
         info.setWorldName(worldName);

@@ -10,6 +10,9 @@ session:
   # Should we query the bedrock server to sync the session information
   query-server: true
 
+  # Whether live Geyser or Bedrock ping data should update the advertised Xbox session
+  sync-from-geyser: true
+
   # This uses checker.geysermc.org for querying if the native ping fails
   # This can be useful in the case of docker networks or routing problems causing the native ping to fail
   web-query-fallback: false
@@ -32,27 +35,10 @@ session:
     max-players: 20
 
     # The IP address of the server
-    ip: 192.168.1.4
+    ip: 127.0.0.1
 
     # The port of the server
     port: 19132
-
-# Override the advertised Xbox session metadata
-session-overrides:
-  # Whether live Geyser ping data should update the advertised Xbox session
-  sync-from-geyser: true
-
-  # Override the advertised host name when non-empty
-  host-name: ''
-
-  # Override the advertised world name when non-empty
-  world-name: ''
-
-  # Override the advertised current player count. Use -1 to keep the live value
-  players: -1
-
-  # Override the advertised max player count. Use -1 to keep the live value
-  max-players: -1
 
 # Xbox session behaviour
 xbox-session:
@@ -89,7 +75,7 @@ bridge:
 nether-net:
   # Publish an externally hosted NetherNet session instead of binding MCXboxBroadcast's own NetherNet gameplay listener.
   # Enable this when another process such as a Geyser fork terminates the actual Bedrock/NetherNet join path.
-  external-hosted: false
+  external-hosted: true
 
   # The externally hosted NetherNet network id to advertise in the Xbox session.
   # This must match the listener that actually accepts the NetherNet/WebRTC join.
@@ -147,4 +133,4 @@ debug-mode: false
 suppress-session-update-message: false
 
 # Do not change!
-config-version: 6
+config-version: 7

@@ -17,9 +17,6 @@ public interface CoreConfig {
     @Comment("Core session settings")
     SessionConfig session();
 
-    @Comment("Override the advertised Xbox session metadata")
-    SessionOverridesConfig sessionOverrides();
-
     @Comment("Xbox session behaviour")
     XboxSessionConfig xboxSession();
 
@@ -80,6 +77,10 @@ public interface CoreConfig {
         @DefaultBoolean(true)
         boolean queryServer();
 
+        @Comment("Whether live Geyser or Bedrock ping data should update the advertised Xbox session")
+        @DefaultBoolean(true)
+        boolean syncFromGeyser();
+
         @Comment("""
             This uses checker.geysermc.org for querying if the native ping fails
             This can be useful in the case of docker networks or routing problems causing the native ping to fail""")
@@ -92,7 +93,7 @@ public interface CoreConfig {
         @DefaultBoolean(false)
         boolean configFallback();
 
-        @Comment("The data to broadcast over xbox live, this is the default if querying is enabled")
+        @Comment("The data to broadcast over xbox live. This is used as the base config and as the fallback if live query data is unavailable")
         @ExcludePlatform(platforms = {"Extension"})
         SessionInfo sessionInfo();
 
@@ -115,7 +116,7 @@ public interface CoreConfig {
             int maxPlayers();
 
             @Comment("The IP address of the server")
-            @DefaultString("test.geysermc.org")
+            @DefaultString("127.0.0.1")
             String ip();
 
             @Comment("The port of the server")
@@ -123,29 +124,6 @@ public interface CoreConfig {
             @NumericRange(from = 1, to = 65535)
             int port();
         }
-    }
-
-    @ConfigSerializable
-    interface SessionOverridesConfig {
-        @Comment("Whether live Geyser ping data should update the advertised Xbox session")
-        @DefaultBoolean(true)
-        boolean syncFromGeyser();
-
-        @Comment("Override the advertised host name when non-empty")
-        @DefaultString("")
-        String hostName();
-
-        @Comment("Override the advertised world name when non-empty")
-        @DefaultString("")
-        String worldName();
-
-        @Comment("Override the advertised current player count. Use -1 to keep the live value")
-        @DefaultNumeric(-1)
-        int players();
-
-        @Comment("Override the advertised max player count. Use -1 to keep the live value")
-        @DefaultNumeric(-1)
-        int maxPlayers();
     }
 
     @ConfigSerializable
@@ -197,7 +175,7 @@ public interface CoreConfig {
         @Comment("""
             Publish an externally hosted NetherNet session instead of binding MCXboxBroadcast's own NetherNet gameplay listener.
             Enable this when another process such as a Geyser fork terminates the actual Bedrock/NetherNet join path.""")
-        @DefaultBoolean(false)
+        @DefaultBoolean(true)
         boolean externalHosted();
 
         @Comment("""

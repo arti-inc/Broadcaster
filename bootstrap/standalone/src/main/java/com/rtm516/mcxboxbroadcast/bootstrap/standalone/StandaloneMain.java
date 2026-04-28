@@ -19,15 +19,22 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class StandaloneMain {
+    private static final Pattern NETHERNET_ID_PATTERN = Pattern.compile("NetherNet ingress started with network ID\\s+(\\d+)");
+    private static final Pattern NUMERIC_LINE_PATTERN = Pattern.compile("(\\d+)");
     private static CoreConfig config;
     private static StandaloneLoggerImpl logger;
     private static SessionInfo sessionInfo;
     private static NotificationManager notificationManager;
     private static StandaloneBridgeService bridgeService;
+    private static String discoveredExternalNetworkId;
 
     public static SessionManager sessionManager;
 
@@ -47,6 +54,7 @@ public class StandaloneMain {
         }
 
         logger.setDebug(config.debugMode());
+        discoveredExternalNetworkId = discoverExternalNetworkId();
         logMode();
 
         // TODO Support multiple notification types
@@ -54,9 +62,26 @@ public class StandaloneMain {
         sessionInfo = new SessionInfo(config.session().sessionInfo());
         applySessionSettings(sessionInfo);
 
+        if (config.netherNet().externalHosted() && effectiveExternalNetworkId().isBlank()) {
+            logger.error("Geyser-backed mode is enabled, but no NetherNet network ID is available yet.");
+            logger.error("Restart Paper/Geyser once so the updated Geyser fork can start NetherNet ingress and write portal-nethernet-id.txt, then start MCXboxBroadcast again.");
+            return;
+        }
+
         if (isLocalBridgeEnabled()) {
             bridgeService = new StandaloneBridgeService(config, logger.prefixed("bridge"), () -> sessionInfo);
-            bridgeService.start();
+            try {
+                bridgeService.start();
+            } catch (IllegalStateException exception) {
+                String fallbackNetworkId = discoverExternalNetworkId();
+                if (!fallbackNetworkId.isBlank()) {
+                    discoveredExternalNetworkId = fallbackNetworkId;
+                    applySessionSettings(sessionInfo);
+                    logger.warn("UDP " + config.bridge().listenPort() + " is already in use. Switching to external-hosted NetherNet publish mode using network ID " + discoveredExternalNetworkId + ".");
+                } else {
+                    throw exception;
+                }
+            }
         }
 
         if (config.enabled()) {
@@ -126,7 +151,7 @@ public class StandaloneMain {
     }
 
     private static void updateSessionInfo(SessionInfo sessionInfo) {
-        if (config.session().queryServer() && config.sessionOverrides().syncFromGeyser()) {
+        if (config.session().queryServer() && config.session().syncFromGeyser()) {
             try {
                 InetSocketAddress addressToPing = isLocalBridgeEnabled()
                     ? new InetSocketAddress(config.bridge().backendAddress(), config.bridge().backendPort())
@@ -166,25 +191,12 @@ public class StandaloneMain {
     }
 
     private static void applySessionSettings(SessionInfo sessionInfo) {
-        if (!config.sessionOverrides().hostName().isBlank()) {
-            sessionInfo.setHostName(config.sessionOverrides().hostName());
-        }
-        if (!config.sessionOverrides().worldName().isBlank()) {
-            sessionInfo.setWorldName(config.sessionOverrides().worldName());
-        }
-        if (config.sessionOverrides().players() >= 0) {
-            sessionInfo.setPlayers(config.sessionOverrides().players());
-        }
-        if (config.sessionOverrides().maxPlayers() >= 0) {
-            sessionInfo.setMaxPlayers(config.sessionOverrides().maxPlayers());
-        }
-
         sessionInfo.setJoinability(config.xboxSession().joinability());
         sessionInfo.setWorldType(config.xboxSession().worldType());
         sessionInfo.setEditorWorld(config.xboxSession().editorWorld());
         sessionInfo.setHardcore(config.xboxSession().hardcore());
-        sessionInfo.setExternalNetherNetHosted(config.netherNet().externalHosted() && !config.netherNet().externalNetworkId().isBlank());
-        sessionInfo.setExternalNetherNetId(config.netherNet().externalNetworkId());
+        sessionInfo.setExternalNetherNetHosted(isExternalNetherNetEnabled());
+        sessionInfo.setExternalNetherNetId(effectiveExternalNetworkId());
         if (isLocalBridgeEnabled()) {
             sessionInfo.setProxyBridgeEnabled(true);
             sessionInfo.setRelayTargetAddress(config.bridge().backendAddress());
@@ -208,6 +220,13 @@ public class StandaloneMain {
         boolean bridgeEnabled = isLocalBridgeEnabled();
         boolean publishEnabled = config.enabled();
         boolean externalNetherNet = isExternalNetherNetEnabled();
+        boolean waitingForExternalNetherNet = config.netherNet().externalHosted() && effectiveExternalNetworkId().isBlank();
+
+        if (waitingForExternalNetherNet) {
+            logger.info("Mode: PUBLISH + EXTERNAL NETHERNET (WAITING)");
+            logger.info("Geyser-backed mode is selected, but the NetherNet network ID has not been discovered yet.");
+            return;
+        }
 
         if (bridgeEnabled && publishEnabled) {
             logger.info("Mode: BRIDGE + PUBLISH");
@@ -224,7 +243,7 @@ public class StandaloneMain {
 
         if (publishEnabled && externalNetherNet) {
             logger.info("Mode: PUBLISH + EXTERNAL NETHERNET");
-            logger.info("Xbox Live session publishing is enabled for externally hosted NetherNet ID " + config.netherNet().externalNetworkId());
+            logger.info("Xbox Live session publishing is enabled for externally hosted NetherNet ID " + effectiveExternalNetworkId());
             return;
         }
 
@@ -238,10 +257,95 @@ public class StandaloneMain {
     }
 
     private static boolean isLocalBridgeEnabled() {
-        return !config.netherNet().externalHosted();
+        return !isExternalNetherNetEnabled();
     }
 
     private static boolean isExternalNetherNetEnabled() {
-        return config.netherNet().externalHosted() && !config.netherNet().externalNetworkId().isBlank();
+        return config.netherNet().externalHosted() && !effectiveExternalNetworkId().isBlank();
+    }
+
+    private static String effectiveExternalNetworkId() {
+        if (discoveredExternalNetworkId != null && !discoveredExternalNetworkId.isBlank()) {
+            return discoveredExternalNetworkId;
+        }
+        return config.netherNet().externalNetworkId().trim();
+    }
+
+    private static String discoverExternalNetworkId() {
+        if (!config.netherNet().externalHosted()) {
+            return "";
+        }
+        if (!config.netherNet().externalNetworkId().isBlank()) {
+            return config.netherNet().externalNetworkId().trim();
+        }
+
+        String fileDiscoveredId = discoverExternalNetworkIdFromFile();
+        if (!fileDiscoveredId.isBlank()) {
+            return fileDiscoveredId;
+        }
+
+        String[] candidates = new String[] {
+            "./logs/latest.log",
+            "../logs/latest.log",
+            "../mc/logs/latest.log",
+            "../../mc/logs/latest.log",
+            System.getProperty("user.home") + "/mc/logs/latest.log",
+            System.getProperty("user.home") + "/mc/server/logs/latest.log"
+        };
+
+        for (String candidate : candidates) {
+            try {
+                Path path = Path.of(candidate).normalize();
+                if (!Files.isRegularFile(path)) {
+                    continue;
+                }
+
+                String content = Files.readString(path);
+                Matcher matcher = NETHERNET_ID_PATTERN.matcher(content);
+                String found = "";
+                while (matcher.find()) {
+                    found = matcher.group(1);
+                }
+                if (!found.isBlank()) {
+                    logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
+                    return found;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        logger.warn("external-hosted is enabled but no NetherNet network ID is configured and none was auto-discovered from the local Geyser ID file or logs.");
+        return "";
+    }
+
+    private static String discoverExternalNetworkIdFromFile() {
+        String[] candidates = new String[] {
+            "./portal-nethernet-id.txt",
+            "../portal-nethernet-id.txt",
+            "../plugins/Geyser-Spigot/portal-nethernet-id.txt",
+            "../../plugins/Geyser-Spigot/portal-nethernet-id.txt",
+            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-nethernet-id.txt",
+            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-nethernet-id.txt"
+        };
+
+        for (String candidate : candidates) {
+            try {
+                Path path = Path.of(candidate).normalize();
+                if (!Files.isRegularFile(path)) {
+                    continue;
+                }
+
+                String content = Files.readString(path).trim();
+                Matcher matcher = NUMERIC_LINE_PATTERN.matcher(content);
+                if (matcher.find()) {
+                    String found = matcher.group(1);
+                    logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
+                    return found;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return "";
     }
 }

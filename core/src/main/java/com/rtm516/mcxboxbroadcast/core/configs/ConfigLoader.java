@@ -18,6 +18,13 @@ import static org.spongepowered.configurate.transformation.TransformAction.renam
 public class ConfigLoader {
     private static final ConfigurationTransformation.Versioned TRANSFORMER = ConfigurationTransformation.versionedBuilder()
         .versionKey("config-version")
+        .addVersion(7, ConfigurationTransformation.builder()
+            .addAction(path("session-overrides", "sync-from-geyser"), moveTo("session"))
+            .addAction(path("session-overrides", "host-name"), moveTo("session", "session-info"))
+            .addAction(path("session-overrides", "world-name"), moveTo("session", "session-info"))
+            .addAction(path("session-overrides", "players"), moveTo("session", "session-info"))
+            .addAction(path("session-overrides", "max-players"), moveTo("session", "session-info"))
+            .build())
         .addVersion(6, ConfigurationTransformation.builder()
             .build())
         .addVersion(5, ConfigurationTransformation.builder()
