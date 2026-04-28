@@ -1,95 +1,76 @@
-# MCXboxBroadcast
-[![License: GPL-3.0](https://img.shields.io/github/license/MCXboxBroadcast/Broadcaster)](LICENSE)
-[![Build Release](https://github.com/MCXboxBroadcast/Broadcaster/actions/workflows/release.yml/badge.svg)](https://github.com/MCXboxBroadcast/Broadcaster/actions/workflows/release.yml)
-[![Discord](https://img.shields.io/discord/1139621390908133396?label=discord&color=5865F2)](https://discord.gg/Tp3tA2kdCN)
+# MCXboxBroadcast NetherNet Fork
 
-A simple tool that broadcasts an existing [Geyser](https://github.com/GeyserMC/Geyser)/Bedrock server over Xbox Live.
+This fork is focused on one job: publish an Xbox joinable session for a Geyser-based server where the real gameplay join terminates inside a paired Geyser NetherNet fork.
 
-This shows up to the authenticated accounts friends in-game as a joinable session and then anyone thats friends with someone who joined through that method will also see the session as joinable ingame.
+It is not documented here as the stock upstream project. This README only covers the fork behavior added in this repo.
 
-![Example screenshot](https://user-images.githubusercontent.com/5401186/159083033-b965bfba-de17-4708-8979-1f33bfd5fa28.png)
+## What This Fork Adds
 
-# DISCLAIMER
-You use this project at your own risk, the contributors are not responsible for any damage or loss caused by the software. We suggest you use an alt account for running the tool in case the account is banned as we emulate some features of a client which may or may not be against TOS.
+- `external-hosted` NetherNet publish mode for pairing with a separate Geyser ingress host
+- a standalone jar release for Xbox session publishing
+- a Geyser extension jar release for installs that still want the extension form
+- docs and config guidance for local-device deployments
 
-## Features
- - Syncing of MOTD and other server details
- - Automatic friend list management
- - Easy Geyser integration (as an extension)
- - Shows as online and playing Minecraft in the Xbox app and website
- - Multi-account support
- - Web manager for larger networks
- - Uploading of a custom image for the account (see below for more info)
+## Recommended Layout
 
-## Pterodactyl Panel
-There is an egg for easy instance creation supplied for [Pterodactyl Panel](https://pterodactyl.io/), this being `egg-m-c-xbox-broadcast.json`
+Use this fork together with the companion Geyser fork in `arti-inc/Geyser-Nethernet-for-mcxb`.
 
-## Docker
-There is a docker image available for the standalone version of the tool, this can be found at `ghcr.io/mcxboxbroadcast/standalone:latest`
+Recommended runtime layout:
 
-```bash
-docker run --rm -it -v /path/to/config:/opt/app/config ghcr.io/mcxboxbroadcast/standalone:latest
-```
+1. `MCXboxBroadcastStandalone.jar` publishes the Xbox Live session
+2. `Geyser-Spigot.jar` or `Geyser-Standalone.jar` from the companion fork hosts the real NetherNet/Bedrock ingress
+3. Bedrock gameplay traffic terminates in Geyser, not in `mcxba`
 
-## Installation
-### Extension
-1. Download the latest release file `MCXboxBroadcastExtension.jar`
-2. Drop the extension into the Geyser `extensions` folder
-3. Restart the server
-4. Wait for the extension to start and present you with an authentication code
-   - `To sign in, use a web browser to open the page https://www.microsoft.com/link and enter the code XXXXXXXX to authenticate.`
-5. Follow the link and enter the code
-6. Login to the account you want to use
-7. Follow the account on Xbox LIVE
-8. Check the friends tab ingame and you should see the server listed
+That removes the old gameplay relay bottleneck and is the smoothest setup from this work.
+
+## Releases
+
+Current release line:
+
+- `nethernet-bridge-1`
+
+Assets:
+
+- `MCXboxBroadcastStandalone.jar`
+- `MCXboxBroadcastExtension.jar`
+
+Release page:
+
+- https://github.com/arti-inc/Broadcaster/releases/tag/nethernet-bridge-1
+
+## Which Jar To Use
 
 ### Standalone
-1. Download the latest release file `MCXboxBroadcastStandalone.jar`
-2. Start the jar file using `java -jar MCXboxBroadcastStandalone.jar`
-3. Wait for the extension to start and present you with an authentication code
-    - `To sign in, use a web browser to open the page https://www.microsoft.com/link and enter the code XXXXXXXX to authenticate.`
-4. Follow the link and enter the code
-5. Login to the account you want to use
-6. Follow the account on Xbox LIVE
-7. Edit the `config.yml` to have the correct ip and port for the target server
-8. Restart the tool
-9. Check the friends tab ingame and you should see the server listed
 
-#### External-hosted NetherNet note
-If you use the standalone broadcaster only for Xbox session publishing and run the actual NetherNet/Geyser ingress on the same local machine, you do **not** need to put your router-forwarded public Bedrock port into `config.yml`. In `nether-net.external-hosted` mode, the join path is driven by the NetherNet network ID, so the `session.session-info` IP/port can stay on the local host/LAN side that matches your real Bedrock listener.
+Use `MCXboxBroadcastStandalone.jar` when this process should run as its own Xbox session publisher.
 
-## Manager
-There is a web manager available for donators. After joining the relevent [GitHub sponsors](https://github.com/sponsors/rtm516) tier you will be able to access its builds at https://github.com/MCXboxBroadcast/Manager/releases
+Run:
 
-Note: This also requires a MongoDB instance to be running
+```bash
+java -jar MCXboxBroadcastStandalone.jar
+```
 
-<details>
-   <summary>Screenshots</summary>
+### Extension
 
-   ![Bots view](https://github.com/user-attachments/assets/e4760c93-a146-45b9-b029-fd3c5c6e7bea)
-   ![Bot info](https://github.com/user-attachments/assets/462f1d8b-c8ab-42e0-ab0e-cb335fc00ab4)
-   ![Bot options](https://github.com/user-attachments/assets/f603d51f-f59e-4a49-b2a5-ffeb074109e8)
-   ![Server options](https://github.com/user-attachments/assets/e203eac3-7190-4510-9f5b-ef87de507cab)
-   ![Manager settings](https://github.com/user-attachments/assets/11f85c70-9b50-4039-bddb-961833b7d11e)
-</details>
+Use `MCXboxBroadcastExtension.jar` only if you explicitly want the extension form.
 
-## Custom Image
-![Custom image](https://github.com/user-attachments/assets/b00832fd-8fa6-4c7a-b764-342bcf6fc037)
+Install:
 
-You can add a custom image to the profile page for the account by placing a `screenshot.jpg` in the same directory as the `config.yml`.
+1. Drop the jar into Geyser's `extensions/` folder
+2. Restart Geyser
 
-The best settings for this image are `1200x675`, quality `90` and chroma subsampling `4:2:0`.
+## Config Note For Local Device Installs
 
-This can take a few minutes to update on the Xbox Live servers and show ingame.
+If `mcxba` and the real Geyser NetherNet ingress are on the same local device, you do not need to use your router-forwarded public Bedrock port in `config.yml`.
 
-## Commands
-For the extension version prefix with `/mcxboxbroadcast`
+In `external-hosted` mode, the important join identifier is the NetherNet network ID. The config can stay on the local or LAN listener that actually matches your Bedrock-side host.
 
-| Command | Description |
-| --- | --- |
-| `exit` (Standalone Only) | Exits the program |
-| `restart` | Restarts the tool |
-| `dumpsession` | Dumps the current session data to files for debugging |
-| `accounts list` | Lists the accounts that are currently in use and their followers count |
-| `accounts add <sub-session-id>` | Adds an account to the list of accounts to use |
-| `accounts remove <sub-session-id>` | Removes an account from the list of accounts to use |
+## Companion Fork
+
+Use this with:
+
+- https://github.com/arti-inc/Geyser-Nethernet-for-mcxb
+
+## Scope
+
+This README is intentionally limited to the NetherNet fork behavior added here. For the original upstream project history and broader feature set, see the upstream `MCXboxBroadcast/Broadcaster` repository.
