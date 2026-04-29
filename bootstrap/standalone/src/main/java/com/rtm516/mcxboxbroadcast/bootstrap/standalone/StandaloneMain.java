@@ -25,12 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 public class StandaloneMain {
-    private static final Pattern NETHERNET_ID_PATTERN = Pattern.compile("NetherNet ingress started with network ID\\s+(\\d+)");
-    private static final Pattern NUMERIC_LINE_PATTERN = Pattern.compile("(\\d+)");
     private static CoreConfig config;
     private static StandaloneLoggerImpl logger;
     private static SessionInfo sessionInfo;
@@ -153,11 +148,11 @@ public class StandaloneMain {
     }
 
     private static void updateSessionInfo(SessionInfo sessionInfo) {
-        if (config.session().queryServer() && config.session().syncFromGeyser()) {
-            if (isExternalNetherNetEnabled() && updateSessionInfoFromStatusFile(sessionInfo)) {
-                return;
-            }
+        if (config.session().syncFromGeyser() && isExternalNetherNetEnabled() && updateSessionInfoFromStatusFile(sessionInfo)) {
+            return;
+        }
 
+        if (config.session().queryServer() && config.session().syncFromGeyser()) {
             try {
                 InetSocketAddress addressToPing = isLocalBridgeEnabled()
                     ? new InetSocketAddress(config.bridge().backendAddress(), config.bridge().backendPort())
@@ -340,37 +335,7 @@ public class StandaloneMain {
             return fileDiscoveredId;
         }
 
-        String[] candidates = new String[] {
-            "./logs/latest.log",
-            "../logs/latest.log",
-            "../mc/logs/latest.log",
-            "../../mc/logs/latest.log",
-            System.getProperty("user.home") + "/mc/logs/latest.log",
-            System.getProperty("user.home") + "/mc/server/logs/latest.log"
-        };
-
-        for (String candidate : candidates) {
-            try {
-                Path path = Path.of(candidate).normalize();
-                if (!Files.isRegularFile(path)) {
-                    continue;
-                }
-
-                String content = Files.readString(path);
-                Matcher matcher = NETHERNET_ID_PATTERN.matcher(content);
-                String found = "";
-                while (matcher.find()) {
-                    found = matcher.group(1);
-                }
-                if (!found.isBlank()) {
-                    logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
-                    return found;
-                }
-            } catch (Exception ignored) {
-            }
-        }
-
-        logger.warn("external-hosted is enabled but no NetherNet network ID is configured and none was auto-discovered from the local Geyser ID file or logs.");
+        logger.warn("external-hosted is enabled but no NetherNet network ID is configured and none was auto-discovered from the local Geyser ID file.");
         return "";
     }
 
@@ -392,9 +357,8 @@ public class StandaloneMain {
                 }
 
                 String content = Files.readString(path).trim();
-                Matcher matcher = NUMERIC_LINE_PATTERN.matcher(content);
-                if (matcher.find()) {
-                    String found = matcher.group(1);
+                String found = content.replaceAll("[^0-9]", "");
+                if (!found.isBlank()) {
                     logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
                     return found;
                 }
