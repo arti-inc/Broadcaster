@@ -2,7 +2,7 @@
 
 This fork is focused on one job: publish an Xbox joinable session for a Geyser-based server where the real gameplay join terminates inside a paired Geyser NetherNet fork.
 
-This work was built to bring back something the Bedrock community lost a long time ago: joining and inviting directly from the game. It also prepares for a future friends-of-friends flow, so players can join while their friends are already on your server.
+This shows up to the authenticated accounts friends in-game as a joinable session. This work was built to bring back something the Bedrock community lost a long time ago: joining and inviting directly from the game. It also prepares for a future friends-of-friends flow, so players can join while their friends are already on your server.
 
 It is not documented here as the stock upstream project. This README only covers the fork behavior added in this repo.
 

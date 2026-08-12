@@ -56,6 +56,7 @@ public class StandaloneMain {
 
         // TODO Support multiple notification types
         notificationManager = new SlackNotificationManager(logger, config.notifications());
+
         sessionInfo = new SessionInfo(config.session().sessionInfo());
         applySessionSettings(sessionInfo);
 
@@ -83,6 +84,7 @@ public class StandaloneMain {
 
         if (config.enabled()) {
             sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
+            sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
 
             // Fallback to the gamertag if the host name is empty
             if (sessionInfo.getHostName().isEmpty()) {
@@ -113,6 +115,7 @@ public class StandaloneMain {
 
             // Create a new session manager, but reuse the notification manager as config hasn't been reloaded
             sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
+            sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
 
             createSession();
         } catch (SessionCreationException | SessionUpdateException e) {
