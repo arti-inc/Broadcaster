@@ -85,6 +85,7 @@ public class StandaloneMain {
         if (config.enabled()) {
             sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
             sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
+            sessionManager.shardNetworkIdResolver(StandaloneMain::discoverShardNetworkId);
 
             // Fallback to the gamertag if the host name is empty
             if (sessionInfo.getHostName().isEmpty()) {
@@ -116,6 +117,7 @@ public class StandaloneMain {
             // Create a new session manager, but reuse the notification manager as config hasn't been reloaded
             sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
             sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
+            sessionManager.shardNetworkIdResolver(StandaloneMain::discoverShardNetworkId);
 
             createSession();
         } catch (SessionCreationException | SessionUpdateException e) {
@@ -268,6 +270,26 @@ public class StandaloneMain {
         if (sessionInfo.getWorldName().isEmpty()) {
             sessionInfo.setWorldName(sessionInfo.getHostName());
         }
+
+        applySubseasonSuffix(sessionInfo);
+    }
+
+    /**
+     * Appends " (<subseason>)" to the advertised secondary MOTD (host name) so that when several
+     * subseasons share a single Geyser instance's NetherNet portal bridge, each subseason's Xbox
+     * session is still distinguishable. Idempotent - safe to call multiple times per update cycle.
+     */
+    private static void applySubseasonSuffix(SessionInfo sessionInfo) {
+        int subseason = config.netherNet().subseason();
+        if (subseason <= 0) {
+            return;
+        }
+
+        String suffix = " (" + subseason + ")";
+        String hostName = sessionInfo.getHostName();
+        if (hostName != null && !hostName.isBlank() && !hostName.endsWith(suffix)) {
+            sessionInfo.setHostName(hostName + suffix);
+        }
     }
 
     private static void logMode() {
@@ -343,6 +365,16 @@ public class StandaloneMain {
     }
 
     private static String discoverExternalNetworkIdFromFile() {
+        int subseason = config.netherNet().subseason();
+        if (subseason > 0) {
+            String shardNetworkId = discoverShardNetworkId(subseason);
+            if (!shardNetworkId.isBlank()) {
+                return shardNetworkId;
+            }
+            logger.warn("Subseason " + subseason + " is configured, but no matching shard was found in " +
+                "portal-nethernet-shards.json. Falling back to the legacy single-shard ID file.");
+        }
+
         String[] candidates = new String[] {
             "./portal-nethernet-id.txt",
             "../portal-nethernet-id.txt",
@@ -364,6 +396,59 @@ public class StandaloneMain {
                 if (!found.isBlank()) {
                     logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
                     return found;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return "";
+    }
+
+    /**
+     * Looks up the NetherNet network id for a specific subseason's shard from the Geyser fork's
+     * portal-nethernet-shards.json (written by PortalBridgeBootstrap when portal-bridge.shard-count > 1).
+     * Shard "index" values are 1-based and correspond directly to subseason numbers.
+     */
+    private static String discoverShardNetworkId(int subseason) {
+        String[] candidates = new String[] {
+            "./portal-nethernet-shards.json",
+            "../portal-nethernet-shards.json",
+            "../plugins/Geyser-Spigot/portal-nethernet-shards.json",
+            "../../plugins/Geyser-Spigot/portal-nethernet-shards.json",
+            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-nethernet-shards.json",
+            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-nethernet-shards.json"
+        };
+
+        for (String candidate : candidates) {
+            try {
+                Path path = Path.of(candidate).normalize();
+                if (!Files.isRegularFile(path)) {
+                    continue;
+                }
+
+                JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+                if (!root.has("shards") || !root.get("shards").isJsonArray()) {
+                    continue;
+                }
+
+                for (var element : root.getAsJsonArray("shards")) {
+                    if (!element.isJsonObject()) {
+                        continue;
+                    }
+
+                    JsonObject shard = element.getAsJsonObject();
+                    if (!shard.has("index") || shard.get("index").getAsInt() != subseason) {
+                        continue;
+                    }
+                    if (!shard.has("networkId") || shard.get("networkId").isJsonNull()) {
+                        continue;
+                    }
+
+                    String networkId = shard.get("networkId").getAsString().replaceAll("[^0-9]", "");
+                    if (!networkId.isBlank()) {
+                        logger.info("Discovered NetherNet shard #" + subseason + " network ID " + networkId + " from " + path);
+                        return networkId;
+                    }
                 }
             } catch (Exception ignored) {
             }
