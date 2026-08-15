@@ -39,6 +39,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -65,6 +66,11 @@ public abstract class SessionManagerCore {
     protected String lastSessionResponse;
 
     protected boolean initialized = false;
+
+    private volatile Instant lastSuccessfulSessionUpdate;
+    private volatile String lastSessionError = "none";
+    private volatile int consecutiveSessionFailures;
+    private volatile boolean sessionHealthy = true;
 
     private Channel netherNetChannel;
     private EventLoopGroup bossGroup;
@@ -182,11 +188,20 @@ public abstract class SessionManagerCore {
         }
 
         int friendCount = -1;
-        try {
-            friendCount = friendManager.get().size();
-        } catch (Exception ignored) {}
+        if (shouldQueryFriendsOnStartup()) {
+            try {
+                friendCount = friendManager.get().size();
+            } catch (Exception ignored) {
+                logger.debug("Unable to query the Xbox friends list during startup; continuing with session publishing.");
+            }
+        } else {
+            logger.info("Friend synchronization is disabled; skipping the startup friends-list request.");
+        }
 
-        logger.info("Successfully authenticated as " + getGamertag() + " (" + getXuid() + ") with " + friendCount + "/" + Constants.MAX_FRIENDS + " friends");
+        String friendSummary = shouldQueryFriendsOnStartup()
+            ? friendCount + "/" + Constants.MAX_FRIENDS
+            : "not queried";
+        logger.info("Successfully authenticated as " + getGamertag() + " (" + getXuid() + ") with " + friendSummary + " friends");
 
         if (handleFriendship()) {
             logger.info("Waiting for friendship to be processed...");
@@ -229,6 +244,14 @@ public abstract class SessionManagerCore {
     protected abstract boolean handleFriendship();
 
     /**
+     * Whether startup should make a People API request. Session publishing does
+     * not require a friends-list request, so safe publisher configurations skip it.
+     */
+    protected boolean shouldQueryFriendsOnStartup() {
+        return true;
+    }
+
+    /**
      * Setup a new session and its prerequisites
      *
      * @throws SessionCreationException If the initial creation of the session fails
@@ -263,6 +286,17 @@ public abstract class SessionManagerCore {
             }
 
             if (this.sessionInfo.isExternalNetherNetHosted()) {
+                // External-hosted mode still publishes a Minecraft JSON-RPC
+                // connection. setupNetherNet() normally initializes this
+                // value, but that method is intentionally skipped when the
+                // actual NetherNet listener lives in Geyser.
+                this.sessionInfo.setPmsgId(manager.getMinecraftSession().getCached().getParsedToken().getPayload().reqString("pmid"));
+                if (this.sessionInfo.getNetherNetId() == null || this.sessionInfo.getNetherNetId().signum() < 1) {
+                    throw new SessionCreationException("External NetherNet mode has no valid NetherNet ID. Wait for Geyser readiness before publishing.");
+                }
+                if (this.sessionInfo.getPmsgId() == null || this.sessionInfo.getPmsgId().isBlank()) {
+                    throw new SessionCreationException("External NetherNet mode has no PmsgId in the Minecraft session token.");
+                }
                 logger.info("Using externally hosted NetherNet ID: " + this.sessionInfo.getNetherNetId());
             } else {
                 setupNetherNet();
@@ -369,19 +403,112 @@ public abstract class SessionManagerCore {
             throw new SessionUpdateException("Unable to update session information, error parsing json: " + e.getMessage());
         }
 
-        HttpResponse<String> createSessionResponse;
+        String lastFailure = "unknown update failure";
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            HttpResponse<String> createSessionResponse;
+            try {
+                createSessionResponse = httpClient.send(createSessionRequest, HttpResponse.BodyHandlers.ofString());
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                lastFailure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                if (attempt < 3) {
+                    sleepBeforeRetry(attempt, 0);
+                    continue;
+                }
+                markSessionUpdateFailure(lastFailure);
+                throw new SessionUpdateException(lastFailure);
+            }
+
+            if (createSessionResponse.statusCode() == 200 || createSessionResponse.statusCode() == 201) {
+                markSessionUpdateSuccess();
+                // Keep a live, sanitized-by-construction copy of the Xbox session
+                // response. This is used by the local harness and diagnostics; it
+                // contains the API response only and never request headers/tokens.
+                try {
+                    storageManager.currentSessionResponse(createSessionResponse.body());
+                } catch (IOException exception) {
+                    logger.warn("Xbox session updated, but the live session snapshot could not be saved: " + exception.getMessage());
+                }
+                return createSessionResponse.body();
+            }
+
+            lastFailure = "Unable to update session information, got status " + createSessionResponse.statusCode();
+            if (createSessionResponse.statusCode() == 429 || createSessionResponse.statusCode() >= 500) {
+                if (attempt < 3) {
+                    int retryAfter = createSessionResponse.headers().firstValue("Retry-After")
+                        .map(value -> {
+                            try {
+                                return Integer.parseInt(value);
+                            } catch (NumberFormatException ignored) {
+                                return 0;
+                            }
+                        })
+                        .orElse(0);
+                    sleepBeforeRetry(attempt, retryAfter);
+                    continue;
+                }
+            }
+
+            logger.warn("Xbox session update failed: " + lastFailure);
+            markSessionUpdateFailure(lastFailure);
+            throw new SessionUpdateException(lastFailure);
+        }
+
+        markSessionUpdateFailure(lastFailure);
+        throw new SessionUpdateException(lastFailure);
+    }
+
+    private void sleepBeforeRetry(int attempt, int retryAfterSeconds) throws SessionUpdateException {
+        long exponentialSeconds = 1L << Math.min(attempt - 1, 3);
+        long delaySeconds = Math.min(30L, Math.max(exponentialSeconds, retryAfterSeconds));
+        logger.warn("Retrying Xbox session update in " + delaySeconds + " second(s) (attempt " + (attempt + 1) + "/3).");
         try {
-            createSessionResponse = httpClient.send(createSessionRequest, HttpResponse.BodyHandlers.ofString());
-        } catch (IOException | InterruptedException e) {
-            throw new SessionUpdateException(e.getMessage());
+            Thread.sleep(delaySeconds * 1000L);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            markSessionUpdateFailure("Interrupted while waiting to retry session update");
+            throw new SessionUpdateException("Interrupted while waiting to retry session update");
         }
+    }
 
-        if (createSessionResponse.statusCode() != 200 && createSessionResponse.statusCode() != 201) {
-            logger.info("Got update session response: " + createSessionResponse.body());
-            throw new SessionUpdateException("Unable to update session information, got status " + createSessionResponse.statusCode() + " trying to update: " + createSessionResponse.body());
+    protected void markSessionUpdateSuccess() {
+        lastSuccessfulSessionUpdate = Instant.now();
+        lastSessionError = "none";
+        consecutiveSessionFailures = 0;
+        sessionHealthy = true;
+    }
+
+    protected void markSessionUpdateFailure(String message) {
+        lastSessionError = message == null || message.isBlank() ? "unknown update failure" : message;
+        consecutiveSessionFailures++;
+        if (consecutiveSessionFailures >= 3) {
+            sessionHealthy = false;
         }
+    }
 
-        return createSessionResponse.body();
+    public boolean isSessionHealthy() {
+        return sessionHealthy;
+    }
+
+    public void markUnhealthy(String reason) {
+        sessionHealthy = false;
+        markSessionUpdateFailure(reason);
+    }
+
+    public String statusSummary() {
+        String id = sessionInfo == null ? "<none>" : sessionInfo.getSessionId();
+        String netherNetId = sessionInfo == null || sessionInfo.getNetherNetId() == null
+            ? "<none>" : sessionInfo.getNetherNetId().toString();
+        boolean pmsgPresent = sessionInfo != null && sessionInfo.getPmsgId() != null && !sessionInfo.getPmsgId().isBlank();
+        return "healthy=" + sessionHealthy
+            + ", sessionId=" + id
+            + ", netherNetId=" + netherNetId
+            + ", pmsgIdPresent=" + pmsgPresent
+            + ", lastUpdate=" + (lastSuccessfulSessionUpdate == null ? "never" : lastSuccessfulSessionUpdate)
+            + ", consecutiveFailures=" + consecutiveSessionFailures
+            + ", lastError=" + lastSessionError;
     }
 
     /**

@@ -34,6 +34,7 @@ public class SessionManager extends SessionManagerCore {
     private final Map<String, SubSessionManager> subSessionManagers;
 
     private CoreConfig.FriendSyncConfig friendSyncConfig;
+    private boolean queryFriendsOnStartup = true;
     private Runnable restartCallback;
     private java.util.function.IntFunction<String> shardNetworkIdResolver = shard -> "";
 
@@ -111,6 +112,10 @@ public class SessionManager extends SessionManagerCore {
     public boolean init(SessionInfo sessionInfo, CoreConfig.FriendSyncConfig friendSyncConfig) throws SessionCreationException, SessionUpdateException {
         // Set the internal session information based on the session info
         this.sessionInfo = new ExpandedSessionInfo("", "", sessionInfo);
+        this.queryFriendsOnStartup = friendSyncConfig.autoFollow()
+            || friendSyncConfig.autoUnfollow()
+            || friendSyncConfig.initialInvite()
+            || friendSyncConfig.expiry().enabled();
 
         super.init();
 
@@ -159,6 +164,11 @@ public class SessionManager extends SessionManagerCore {
     protected boolean handleFriendship() {
         // Don't do anything as we are the main session
         return false;
+    }
+
+    @Override
+    protected boolean shouldQueryFriendsOnStartup() {
+        return queryFriendsOnStartup;
     }
 
     /**

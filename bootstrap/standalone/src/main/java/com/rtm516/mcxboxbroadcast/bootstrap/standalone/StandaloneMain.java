@@ -23,9 +23,13 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 public class StandaloneMain {
+    private static final long MAX_EXTERNAL_STATUS_AGE_SECONDS = 180;
+    private static final String REQUIRED_JOINABILITY = "joinable_by_friends";
     private static CoreConfig config;
     private static StandaloneLoggerImpl logger;
     private static SessionInfo sessionInfo;
@@ -52,6 +56,9 @@ public class StandaloneMain {
 
         logger.setDebug(config.debugMode());
         discoveredExternalNetworkId = discoverExternalNetworkId();
+        if (config.netherNet().externalHosted() && effectiveExternalNetworkId().isBlank()) {
+            discoveredExternalNetworkId = waitForExternalNetworkId();
+        }
         logMode();
 
         // TODO Support multiple notification types
@@ -136,7 +143,9 @@ public class StandaloneMain {
         }
 
         sessionManager.scheduledThread().scheduleWithFixedDelay(() -> {
-            updateSessionInfo(sessionInfo);
+            if (!updateSessionInfo(sessionInfo)) {
+                return;
+            }
 
             try {
                 // Update the session
@@ -152,9 +161,17 @@ public class StandaloneMain {
         }, config.session().updateInterval(), config.session().updateInterval(), TimeUnit.SECONDS);
     }
 
-    private static void updateSessionInfo(SessionInfo sessionInfo) {
+    private static boolean updateSessionInfo(SessionInfo sessionInfo) {
+        refreshExternalNetworkId();
+        if (config.netherNet().externalHosted()
+            && config.netherNet().externalNetworkId().isBlank()
+            && !hasReadyExternalNetworkStatus()) {
+            sessionManager.markUnhealthy("Geyser NetherNet status is missing, stale, or not ready");
+            logger.warn("Geyser NetherNet status is not ready; keeping the Xbox session unchanged until Geyser is ready.");
+            return false;
+        }
         if (config.session().syncFromGeyser() && isExternalNetherNetEnabled() && updateSessionInfoFromStatusFile(sessionInfo)) {
-            return;
+            return true;
         }
 
         if (config.session().queryServer() && config.session().syncFromGeyser()) {
@@ -194,6 +211,7 @@ public class StandaloneMain {
                 }
             }
         }
+        return true;
     }
 
     private static boolean updateSessionInfoFromStatusFile(SessionInfo sessionInfo) {
@@ -214,6 +232,10 @@ public class StandaloneMain {
                 }
 
                 JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+                if (!isReadyStatus(root)) {
+                    logger.warn("Ignoring non-ready Geyser NetherNet status file " + path);
+                    continue;
+                }
                 sessionInfo.setHostName(readStatusString(root, "hostName", config.session().sessionInfo().hostName()));
                 sessionInfo.setWorldName(readStatusString(root, "worldName", config.session().sessionInfo().worldName()));
                 sessionInfo.setPlayers(readStatusInt(root, "players", config.session().sessionInfo().players()));
@@ -247,7 +269,11 @@ public class StandaloneMain {
     }
 
     private static void applySessionSettings(SessionInfo sessionInfo) {
-        sessionInfo.setJoinability(config.xboxSession().joinability());
+        if (!REQUIRED_JOINABILITY.equals(config.xboxSession().joinability())) {
+            logger.warn("Only joinable_by_friends is supported by the NetherNet publisher; overriding configured joinability '"
+                + config.xboxSession().joinability() + "'.");
+        }
+        sessionInfo.setJoinability(REQUIRED_JOINABILITY);
         sessionInfo.setWorldType(config.xboxSession().worldType());
         sessionInfo.setEditorWorld(config.xboxSession().editorWorld());
         sessionInfo.setHardcore(config.xboxSession().hardcore());
@@ -364,59 +390,90 @@ public class StandaloneMain {
         return "";
     }
 
-    private static String discoverExternalNetworkIdFromFile() {
-        int subseason = config.netherNet().subseason();
-        if (subseason > 0) {
-            String shardNetworkId = discoverShardNetworkId(subseason);
-            if (!shardNetworkId.isBlank()) {
-                return shardNetworkId;
-            }
-            logger.warn("Subseason " + subseason + " is configured, but no matching shard was found in " +
-                "portal-nethernet-shards.json. Falling back to the legacy single-shard ID file.");
+    /**
+     * Wait for Paper/Geyser when standalone is started first. Geyser writes
+     * the generated ID only after its NetherNet signaling server is bound.
+     */
+    private static String waitForExternalNetworkId() {
+        int timeoutSeconds = config.netherNet().discoveryTimeoutSeconds();
+        if (timeoutSeconds <= 0) {
+            return "";
         }
 
-        String[] candidates = new String[] {
-            "./portal-nethernet-id.txt",
-            "../portal-nethernet-id.txt",
-            "../plugins/Geyser-Spigot/portal-nethernet-id.txt",
-            "../../plugins/Geyser-Spigot/portal-nethernet-id.txt",
-            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-nethernet-id.txt",
-            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-nethernet-id.txt"
-        };
+        logger.info("Waiting up to " + timeoutSeconds + " seconds for the local Geyser NetherNet ID...");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
+        while (System.nanoTime() < deadline) {
+            String found = discoverExternalNetworkId();
+            if (!found.isBlank()) {
+                return found;
+            }
 
-        for (String candidate : candidates) {
             try {
-                Path path = Path.of(candidate).normalize();
-                if (!Files.isRegularFile(path)) {
-                    continue;
-                }
-
-                String content = Files.readString(path).trim();
-                String found = content.replaceAll("[^0-9]", "");
-                if (!found.isBlank()) {
-                    logger.info("Discovered local Geyser NetherNet ID " + found + " from " + path);
-                    return found;
-                }
-            } catch (Exception ignored) {
+                Thread.sleep(1000);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return "";
             }
         }
 
+        logger.warn("Timed out waiting for the local Geyser NetherNet ID.");
         return "";
     }
 
     /**
-     * Looks up the NetherNet network id for a specific subseason's shard from the Geyser fork's
-     * portal-nethernet-shards.json (written by PortalBridgeBootstrap when portal-bridge.shard-count > 1).
-     * Shard "index" values are 1-based and correspond directly to subseason numbers.
+     * Keep the published session aligned if Geyser regenerates or changes a
+     * shard identity while this process remains running.
      */
-    private static String discoverShardNetworkId(int subseason) {
+    private static void refreshExternalNetworkId() {
+        if (!config.netherNet().externalHosted() || !config.netherNet().externalNetworkId().isBlank()) {
+            return;
+        }
+
+        String found = discoverExternalNetworkIdFromFile();
+        if (found.isBlank() || found.equals(discoveredExternalNetworkId)) {
+            return;
+        }
+
+        discoveredExternalNetworkId = found;
+        logger.info("Updated external NetherNet ID from local Geyser: " + found);
+        if (sessionInfo != null) {
+            applySessionSettings(sessionInfo);
+        }
+    }
+
+    private static String discoverExternalNetworkIdFromFile() {
+        int subseason = config.netherNet().subseason();
+        if (subseason > 0) {
+            String statusNetworkId = discoverStatusNetworkId(subseason);
+            if (!statusNetworkId.isBlank()) {
+                return statusNetworkId;
+            }
+            logger.warn("Subseason " + subseason + " is configured, but no matching ready shard was found in the Geyser status files.");
+        } else {
+            String statusNetworkId = discoverStatusNetworkId(0);
+            if (!statusNetworkId.isBlank()) {
+                return statusNetworkId;
+            }
+        }
+
+        // Do not fall back to the legacy one-line ID file. It has no readiness
+        // or freshness information and can advertise a dead identity after a crash.
+        return "";
+    }
+
+    /**
+     * Reads the live status file written by Geyser. This is the preferred
+     * discovery source because it is published beside the session metadata
+     * and contains all shard IDs in one place.
+     */
+    private static String discoverStatusNetworkId(int subseason) {
         String[] candidates = new String[] {
-            "./portal-nethernet-shards.json",
-            "../portal-nethernet-shards.json",
-            "../plugins/Geyser-Spigot/portal-nethernet-shards.json",
-            "../../plugins/Geyser-Spigot/portal-nethernet-shards.json",
-            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-nethernet-shards.json",
-            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-nethernet-shards.json"
+            "./portal-session-status.json",
+            "../portal-session-status.json",
+            "../plugins/Geyser-Spigot/portal-session-status.json",
+            "../../plugins/Geyser-Spigot/portal-session-status.json",
+            System.getProperty("user.home") + "/mc/plugins/Geyser-Spigot/portal-session-status.json",
+            System.getProperty("user.home") + "/mc/server/plugins/Geyser-Spigot/portal-session-status.json"
         };
 
         for (String candidate : candidates) {
@@ -427,33 +484,65 @@ public class StandaloneMain {
                 }
 
                 JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-                if (!root.has("shards") || !root.get("shards").isJsonArray()) {
+                if (!isReadyStatus(root)) {
+                    logger.warn("Geyser NetherNet status is not ready in " + path);
                     continue;
                 }
-
-                for (var element : root.getAsJsonArray("shards")) {
-                    if (!element.isJsonObject()) {
-                        continue;
+                if (subseason > 0 && root.has("netherNetIds") && root.get("netherNetIds").isJsonArray()) {
+                    var ids = root.getAsJsonArray("netherNetIds");
+                    int shardIndex = subseason - 1;
+                    if (shardIndex >= 0 && shardIndex < ids.size()) {
+                        String networkId = ids.get(shardIndex).getAsString().replaceAll("[^0-9]", "");
+                        if (!networkId.isBlank()) {
+                            logger.info("Discovered NetherNet shard #" + subseason + " network ID " + networkId + " from " + path);
+                            return networkId;
+                        }
                     }
+                }
 
-                    JsonObject shard = element.getAsJsonObject();
-                    if (!shard.has("index") || shard.get("index").getAsInt() != subseason) {
-                        continue;
-                    }
-                    if (!shard.has("networkId") || shard.get("networkId").isJsonNull()) {
-                        continue;
-                    }
-
-                    String networkId = shard.get("networkId").getAsString().replaceAll("[^0-9]", "");
+                if (root.has("netherNetId") && !root.get("netherNetId").isJsonNull()) {
+                    String networkId = root.get("netherNetId").getAsString().replaceAll("[^0-9]", "");
                     if (!networkId.isBlank()) {
-                        logger.info("Discovered NetherNet shard #" + subseason + " network ID " + networkId + " from " + path);
+                        logger.info("Discovered local Geyser NetherNet ID " + networkId + " from " + path);
                         return networkId;
                     }
                 }
             } catch (Exception ignored) {
+                // Geyser may be writing the file at the same time; try again on the next poll.
             }
         }
 
+        return "";
+    }
+
+    private static boolean hasReadyExternalNetworkStatus() {
+        return !discoverExternalNetworkIdFromFile().isBlank();
+    }
+
+    private static boolean isReadyStatus(JsonObject root) {
+        if (!root.has("ready") || !root.get("ready").getAsBoolean()
+            || !root.has("generatedAt") || root.get("generatedAt").isJsonNull()) {
+            return false;
+        }
+
+        try {
+            Instant generatedAt = Instant.parse(root.get("generatedAt").getAsString());
+            long age = Duration.between(generatedAt, Instant.now()).getSeconds();
+            return age >= 0 && age <= MAX_EXTERNAL_STATUS_AGE_SECONDS;
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    /** Looks up a ready NetherNet ID for a specific subseason. */
+    private static String discoverShardNetworkId(int subseason) {
+        String readyStatusNetworkId = discoverStatusNetworkId(subseason);
+        if (!readyStatusNetworkId.isBlank()) {
+            return readyStatusNetworkId;
+        }
+
+        // Do not use the legacy shard file as a source of truth for a live
+        // session; it has no readiness or freshness metadata.
         return "";
     }
 }

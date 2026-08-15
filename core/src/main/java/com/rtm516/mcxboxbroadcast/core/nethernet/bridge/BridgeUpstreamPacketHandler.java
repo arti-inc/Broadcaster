@@ -54,10 +54,14 @@ public final class BridgeUpstreamPacketHandler implements BedrockPacketHandler {
 
         NetworkSettingsPacket networkSettingsPacket = new NetworkSettingsPacket();
         networkSettingsPacket.setCompressionThreshold(0);
-        networkSettingsPacket.setCompressionAlgorithm(PacketCompressionAlgorithm.SNAPPY);
+        // NetherNetBedrockPeer uses the raw-ZLIB strategy for the Bedrock stream.
+        // Advertising SNAPPY here makes the Bedrock client decode the first
+        // compressed gameplay packets with the wrong algorithm and leaves it
+        // stuck on "Connecting to multiplayer game".
+        networkSettingsPacket.setCompressionAlgorithm(PacketCompressionAlgorithm.ZLIB);
 
         session.sendPacketImmediately(networkSettingsPacket);
-        session.setCompression(PacketCompressionAlgorithm.SNAPPY);
+        session.setCompression(PacketCompressionAlgorithm.ZLIB);
         return PacketSignal.HANDLED;
     }
 

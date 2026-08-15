@@ -219,6 +219,14 @@ public interface CoreConfig {
         @DefaultNumeric(0)
         @NumericRange(from = 0, to = Integer.MAX_VALUE)
         int subseason();
+
+        @Comment("""
+            How long standalone mode should wait for the local Geyser portal bridge to publish its
+            automatically generated NetherNet ID when external-network-id is empty.
+            This makes it safe to start MCXboxBroadcast before Paper/Geyser.""")
+        @DefaultNumeric(120)
+        @NumericRange(from = 0, to = Integer.MAX_VALUE)
+        int discoveryTimeoutSeconds();
     }
 
     @ConfigSerializable
@@ -230,16 +238,16 @@ public interface CoreConfig {
         @NumericRange(from = 20, to = Integer.MAX_VALUE)
         int updateInterval();
 
-        @Comment("Should we automatically follow people that follow us")
-        @DefaultBoolean(true)
+        @Comment("Should we automatically follow people that follow us. Disabled by default for safe session publishing.")
+        @DefaultBoolean(false)
         boolean autoFollow();
 
-        @Comment("Should we automatically unfollow people that no longer follow us")
-        @DefaultBoolean(true)
+        @Comment("Should we automatically unfollow people that no longer follow us. Disabled by default for safe session publishing.")
+        @DefaultBoolean(false)
         boolean autoUnfollow();
 
-        @Comment("Should we automatically send an invite when a friend is added")
-        @DefaultBoolean(true)
+        @Comment("Should we automatically send an invite when a friend is added. Disabled by default; use invite <xuid> explicitly.")
+        @DefaultBoolean(false)
         boolean initialInvite();
 
         @Comment("Friend expiry settings")
@@ -247,8 +255,8 @@ public interface CoreConfig {
 
         @ConfigSerializable
         interface ExpiryConfig {
-            @Comment("Should we unfriend people that haven't joined the server in a while")
-            @DefaultBoolean(true)
+            @Comment("Should we unfriend people that haven't joined the server in a while. Disabled by default for safe session publishing.")
+            @DefaultBoolean(false)
             boolean enabled();
 
             @Comment("The amount of time in days before a friend is considered expired")
