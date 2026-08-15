@@ -154,7 +154,7 @@ That removes the old gameplay relay bottleneck and is the smoothest setup from t
 
 Current release line:
 
-- `nethernet-bridge-2`
+- Build `2`
 
 Assets:
 
@@ -163,7 +163,7 @@ Assets:
 
 Release page:
 
-- https://github.com/arti-inc/Broadcaster/releases/tag/nethernet-bridge-2
+- https://github.com/arti-inc/Broadcaster/releases/tag/2
 
 ## Which Jar To Use
 
