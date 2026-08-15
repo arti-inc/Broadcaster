@@ -36,15 +36,15 @@ jobs:
     - name: Get previous build number
       id: getPreviousBuild
       run: | 
-        PREVIOUS_TAG=$(git for-each-ref --sort=-version:refname --count 1 --format="%(refname:short)" "refs/tags/*")
-        echo result=${PREVIOUS_TAG} >> $GITHUB_OUTPUT
+        PREVIOUS_BUILD=$(git tag --list | grep -E '^[0-9]+$' | sort -n | tail -1 || true)
+        echo result=${PREVIOUS_BUILD:-0} >> $GITHUB_OUTPUT
 
     - name: Get current build number
       id: getCurrentBuild
       if: success()
       env:
         PREVIOUS_BUILD: ${{ steps.getPreviousBuild.outputs.result }}
-      run: echo result=$((++PREVIOUS_BUILD)) >> $GITHUB_OUTPUT
+      run: echo result=$((PREVIOUS_BUILD + 1)) >> $GITHUB_OUTPUT
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v5
