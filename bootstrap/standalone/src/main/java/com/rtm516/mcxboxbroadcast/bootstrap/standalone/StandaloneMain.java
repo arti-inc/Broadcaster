@@ -55,21 +55,37 @@ public class StandaloneMain {
         }
 
         logger.setDebug(config.debugMode());
+
+        // Initialize the publisher before NetherNet discovery. Geyser's
+        // externally hosted ingress uses the authorization header written by
+        // MCXboxBroadcast, so waiting for Geyser first can otherwise create a
+        // deadlock when the cached token is expired.
+        notificationManager = new SlackNotificationManager(logger, config.notifications());
+        if (config.enabled()) {
+            sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
+            sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
+            sessionManager.shardNetworkIdResolver(StandaloneMain::discoverShardNetworkId);
+            logger.info("Refreshing Xbox authentication before NetherNet discovery...");
+            sessionManager.ensureAuthenticated();
+            logger.info("Xbox authentication is ready for NetherNet signaling.");
+        }
+
         discoveredExternalNetworkId = discoverExternalNetworkId();
         if (config.netherNet().externalHosted() && effectiveExternalNetworkId().isBlank()) {
             discoveredExternalNetworkId = waitForExternalNetworkId();
         }
         logMode();
 
-        // TODO Support multiple notification types
-        notificationManager = new SlackNotificationManager(logger, config.notifications());
-
         sessionInfo = new SessionInfo(config.session().sessionInfo());
         applySessionSettings(sessionInfo);
 
         if (config.netherNet().externalHosted() && effectiveExternalNetworkId().isBlank()) {
             logger.error("Geyser-backed mode is enabled, but no NetherNet network ID is available yet.");
-            logger.error("Restart Paper/Geyser once so the updated Geyser fork can start NetherNet ingress and write portal-nethernet-id.txt, then start MCXboxBroadcast again.");
+            logger.error("Restart Paper/Geyser once so the updated Geyser fork can start NetherNet ingress and write portal-session-status.json, then start MCXboxBroadcast again.");
+            if (sessionManager != null) {
+                sessionManager.shutdown();
+                sessionManager = null;
+            }
             return;
         }
 
@@ -90,10 +106,6 @@ public class StandaloneMain {
         }
 
         if (config.enabled()) {
-            sessionManager = new SessionManager(new FileStorageManager("./cache", "./screenshot.jpg"), notificationManager, logger);
-            sessionManager.setNetherNetPortRange(config.session().icePortRange().min(), config.session().icePortRange().max());
-            sessionManager.shardNetworkIdResolver(StandaloneMain::discoverShardNetworkId);
-
             // Fallback to the gamertag if the host name is empty
             if (sessionInfo.getHostName().isEmpty()) {
                 sessionInfo.setHostName(sessionManager.getGamertag());

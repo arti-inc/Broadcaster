@@ -165,6 +165,16 @@ public abstract class SessionManagerCore {
     }
 
     /**
+     * Ensure the Xbox authentication cache is loaded and its refreshable
+     * tokens are current. This is intentionally separate from session
+     * creation so external-hosted NetherNet mode can refresh authentication
+     * before Geyser attempts to bind its signaling channel.
+     */
+    public void ensureAuthenticated() {
+        getAuthManager();
+    }
+
+    /**
      * Initialize the session manager with the given session information
      *
      * @throws SessionCreationException If the session failed to create either because it already exists or some other reason

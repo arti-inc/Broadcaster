@@ -99,11 +99,13 @@ friend-sync:
     enabled: false
 ```
 
-Start Paper/Geyser first and then run MCXboxBroadcast from the
-`mcxbox-standalone` directory. The publisher waits for a fresh, ready
-`portal-session-status.json`, verifies the NetherNet ID, and publishes the
-Xbox session with the ID and `PmsgId` supplied by the session service. No ID
-copying is required.
+For a clean startup, run MCXboxBroadcast first, then start Paper/Geyser. The
+publisher refreshes the Xbox authentication cache and waits; Geyser can then
+bind its NetherNet signaling channel with the fresh header and write a ready
+`portal-session-status.json`. MCXboxBroadcast discovers that file, verifies
+the NetherNet ID, and publishes the Xbox session with the ID and `PmsgId`
+supplied by the session service. No ID copying is required. If the cache is
+known to be fresh, Paper/Geyser may also be started first.
 
 The standalone console provides two safe operational commands:
 
