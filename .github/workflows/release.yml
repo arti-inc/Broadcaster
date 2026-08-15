@@ -84,10 +84,7 @@ jobs:
 
     - name: Generate release diff
       if: ${{ success() && github.ref_name == 'master' }}
-      env:
-        BEGIN_COMMIT: ${{ steps.getPreviousBuild.outputs.result }}
-        END_COMMIT: ${{ steps.getCurrentBuild.outputs.result }}
-      run: git fetch --tags --force && git log --pretty=format:"* %s (%h)" ${BEGIN_COMMIT}..${END_COMMIT} > release_notes.md
+      run: git fetch --tags --force && git log -n 50 --pretty=format:"* %s (%h)" > release_notes.md
 
     - name: Publish to Modrinth
       if: ${{ success() && github.repository == 'MCXboxBroadcast/Broadcaster' &&  github.ref_name == 'master' }}
