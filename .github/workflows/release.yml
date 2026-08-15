@@ -15,6 +15,9 @@ env:
   DOCKER_OWNER: ${{ github.repository_owner }}
   DOCKER_CONTAINER: standalone
   DOCKER_TAG: ${{ github.ref_name }}
+
+permissions:
+  contents: write
   
 jobs:
   build:
