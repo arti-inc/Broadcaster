@@ -175,7 +175,7 @@ That removes the old gameplay relay bottleneck and is the smoothest setup from t
 
 Current release line:
 
-- Build `3`
+- Build `4`
 
 Assets:
 
