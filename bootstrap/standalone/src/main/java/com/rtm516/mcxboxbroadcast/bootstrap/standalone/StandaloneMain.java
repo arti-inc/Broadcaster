@@ -29,7 +29,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 public class StandaloneMain {
     private static final long MAX_EXTERNAL_STATUS_AGE_SECONDS = 180;
-    private static final String REQUIRED_JOINABILITY = "joinable_by_friends";
+    private static final String FRIENDS_JOINABILITY = "joinable_by_friends";
+    private static final String FRIENDS_OF_FRIENDS_JOINABILITY = "joinable_by_friends_of_friends";
     private static CoreConfig config;
     private static StandaloneLoggerImpl logger;
     private static SessionInfo sessionInfo;
@@ -281,11 +282,13 @@ public class StandaloneMain {
     }
 
     private static void applySessionSettings(SessionInfo sessionInfo) {
-        if (!REQUIRED_JOINABILITY.equals(config.xboxSession().joinability())) {
-            logger.warn("Only joinable_by_friends is supported by the NetherNet publisher; overriding configured joinability '"
-                + config.xboxSession().joinability() + "'.");
+        String joinability = config.xboxSession().joinability();
+        if (!FRIENDS_JOINABILITY.equals(joinability) && !FRIENDS_OF_FRIENDS_JOINABILITY.equals(joinability)) {
+            logger.warn("Unsupported joinability '" + joinability
+                + "'; using joinable_by_friends as the safe fallback. Supported values: joinable_by_friends, joinable_by_friends_of_friends.");
+            joinability = FRIENDS_JOINABILITY;
         }
-        sessionInfo.setJoinability(REQUIRED_JOINABILITY);
+        sessionInfo.setJoinability(joinability);
         sessionInfo.setWorldType(config.xboxSession().worldType());
         sessionInfo.setEditorWorld(config.xboxSession().editorWorld());
         sessionInfo.setHardcore(config.xboxSession().hardcore());

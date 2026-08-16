@@ -150,7 +150,7 @@ public interface CoreConfig {
     @ConfigSerializable
     interface XboxSessionConfig {
         @Comment("Who can see and join the session. Common values: joinable_by_friends, joinable_by_friends_of_friends")
-        @DefaultString("joinable_by_friends")
+        @DefaultString("joinable_by_friends_of_friends")
         String joinability();
 
         @Comment("The world type shown in the Xbox session")

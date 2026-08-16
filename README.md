@@ -2,7 +2,7 @@
 
 This fork is focused on one job: publish an Xbox joinable session for a Geyser-based server where the real gameplay join terminates inside a paired Geyser NetherNet fork.
 
-This shows up to the authenticated accounts friends in-game as a joinable session. This work was built to bring back something the Bedrock community lost a long time ago: joining and inviting directly from the game. It also prepares for a future friends-of-friends flow, so players can join while their friends are already on your server.
+This shows up to the authenticated account's friends and friends-of-friends in-game as a joinable session. This work was built to bring back something the Bedrock community lost a long time ago: joining and inviting directly from the game.
 
 It is not documented here as the stock upstream project. This README only covers the fork behavior added in this repo.
 
@@ -37,7 +37,7 @@ mode. Geyser owns the live NetherNet connection and Paper owns the Java game.
 - ViaVersion and Floodgate installed on Paper, or Floodgate installed on Velocity
 - The companion Geyser fork installed as `Geyser-Spigot.jar` or `Geyser-Velocity.jar`
 - An Xbox/Microsoft account that is allowed to publish the session
-- Bedrock players who can see the publisher through the Xbox friends/session UI
+- Bedrock players who can see the publisher through the Xbox friends/session UI; the default is `joinable_by_friends_of_friends`
 
 ### Recommended directory layout
 
@@ -109,6 +109,9 @@ nether-net:
   external-hosted: true
   external-network-id: ''
   discovery-timeout-seconds: 120
+
+xbox-session:
+  joinability: joinable_by_friends_of_friends
 
 friend-sync:
   auto-follow: false

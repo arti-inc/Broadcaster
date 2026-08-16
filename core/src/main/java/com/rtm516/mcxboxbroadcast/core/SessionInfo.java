@@ -14,7 +14,7 @@ public class SessionInfo {
     private int maxPlayers;
     private String ip;
     private int port;
-    private String joinability = "joinable_by_friends";
+    private String joinability = "joinable_by_friends_of_friends";
     private String worldType = "Survival";
     private boolean editorWorld;
     private boolean hardcore;
