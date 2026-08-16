@@ -180,6 +180,17 @@ public class SessionManager extends SessionManagerCore {
     public void updateSession(SessionInfo sessionInfo) throws SessionUpdateException {
         this.sessionInfo.updateSessionInfo(sessionInfo);
         updateSession();
+
+        // Sub-sessions publish independent Xbox sessions, but advertise the same
+        // live server metadata as the primary session. Keep their host/world name
+        // and player counts synchronized after every successful primary update.
+        for (Map.Entry<String, SubSessionManager> entry : subSessionManagers.entrySet()) {
+            try {
+                entry.getValue().syncFromParent();
+            } catch (SessionUpdateException exception) {
+                logger.error("Failed to synchronize sub-session " + entry.getKey(), exception);
+            }
+        }
     }
 
     @Override

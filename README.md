@@ -34,8 +34,8 @@ mode. Geyser owns the live NetherNet connection and Paper owns the Java game.
 
 - Java 25 for the current development builds
 - Paper 1.21.11 (or the Java version selected by the paired Geyser build)
-- ViaVersion and Floodgate installed on Paper
-- The companion Geyser fork installed as `Geyser-Spigot.jar`
+- ViaVersion and Floodgate installed on Paper, or Floodgate installed on Velocity
+- The companion Geyser fork installed as `Geyser-Spigot.jar` or `Geyser-Velocity.jar`
 - An Xbox/Microsoft account that is allowed to publish the session
 - Bedrock players who can see the publisher through the Xbox friends/session UI
 
@@ -79,6 +79,25 @@ advanced:
 The auth-file is read locally and is never printed by the bridge. Keep the two
 processes on the same trusted machine unless you have a secure way to provide
 the cache to Geyser.
+
+### Velocity
+
+Velocity is supported by the companion Geyser fork. Install `Geyser-Velocity.jar`
+and Floodgate for Velocity in the proxy's `plugins/` directory, then configure
+the portal bridge in `plugins/Geyser-Velocity/config.yml` using the same
+`xbox-auth-header-file` and `nether-net-network-id: ''` settings shown above.
+The MCXboxBroadcast standalone jar is unchanged: it publishes the Xbox session
+while Geyser-Velocity owns NetherNet ingress. Configure the backend Java server
+and Floodgate forwarding according to the normal Geyser/Velocity setup before
+testing a Bedrock join.
+
+When MCXboxBroadcast has sub-sessions, leave `xbox-auth-header-files` empty.
+The companion Geyser fork automatically reads the primary cache and the
+sub-session cache files listed by MCXboxBroadcast's `sub_sessions.json`, in
+the same order as the NetherNet shards. Set `shard-count` to the number of
+published sessions (primary plus active sub-sessions). Each shard must use the
+Xbox account that publishes its corresponding Xbox session; using the primary
+cache for every shard causes duplicate signaling and NetherNet join failures.
 
 ### MCXboxBroadcast configuration
 
@@ -148,7 +167,7 @@ Use this fork together with the companion Geyser fork in `arti-inc/Geyser-Nether
 Recommended runtime layout:
 
 1. `MCXboxBroadcastStandalone.jar` publishes the Xbox Live session
-2. `Geyser-Spigot.jar` or `Geyser-Standalone.jar` from the companion fork hosts the real NetherNet/Bedrock ingress
+2. `Geyser-Spigot.jar`, `Geyser-Velocity.jar`, or `Geyser-Standalone.jar` from the companion fork hosts the real NetherNet/Bedrock ingress
 3. Bedrock gameplay traffic terminates in Geyser, not in `mcxba`
 That removes the old gameplay relay bottleneck and is the smoothest setup from this work.
 
@@ -156,7 +175,7 @@ That removes the old gameplay relay bottleneck and is the smoothest setup from t
 
 Current release line:
 
-- Build `2`
+- Build `3`
 
 Assets:
 
@@ -165,7 +184,7 @@ Assets:
 
 Release page:
 
-- https://github.com/arti-inc/Broadcaster/releases/tag/2
+- https://github.com/arti-inc/Broadcaster/releases
 
 ## Which Jar To Use
 
